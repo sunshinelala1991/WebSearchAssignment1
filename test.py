@@ -8,7 +8,16 @@ from sklearn.metrics import accuracy_score, classification_report
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.linear_model import LogisticRegression
 from MyLogesticRegression import MyLogisticRegression
-#nltk.download('words')
+from nltk.corpus import sentiwordnet as swn
+from nltk.corpus import wordnet as wn
+from scipy.spatial.distance import cosine as cos_distance
+import gensim
+from nltk.data import find
+from nltk.corpus import brown
+import math
+import logging
+from nltk.corpus import opinion_lexicon
+#nltk.download('sentiwordnet')
 
 word_set=set(nltk.corpus.words.words())
 lemmatizer = nltk.stem.wordnet.WordNetLemmatizer()
@@ -65,9 +74,6 @@ def preprocess(tweet):
     if tag_list:
         words=words+tag_list
     #print words
-
-
-
 
     return words
 
@@ -154,27 +160,168 @@ def test(clf,training_data,training_classifications,test_data,test_classificatio
     clf.fit(training_data,training_classifications)
     predictions = clf.predict(test_data)
     accuracy = accuracy_score(test_classifications,predictions)
-    print accuracy
+    return accuracy
+
+
+
+
+
+def get_polarity_type(synset_name):
+    swn_synset =  swn.senti_synset(synset_name)
+    if not swn_synset:
+        return None
+    elif swn_synset.pos_score() > swn_synset.neg_score() and swn_synset.pos_score() > swn_synset.obj_score():
+        return 1
+    elif swn_synset.neg_score() > swn_synset.pos_score() and swn_synset.neg_score() > swn_synset.obj_score():
+        return -1
+    else:
+        return 0
+
+
+
+def second_lexicon(positive_seeds,negative_seeds):
+
+    word2vec_sample = str(find('models/word2vec_sample/pruned.word2vec.txt'))
+    model = gensim.models.Word2Vec.load_word2vec_format(word2vec_sample, binary=False)
+    positive_list=[]
+    negative_list=[]
+
+    for aword in model.vocab:
+        score=0
+        for pseed in positive_seeds:
+            score+=model.similarity(aword, pseed)
+        for nseed in negative_seeds:
+            score-=model.similarity(aword,nseed)
+
+        score=score/16.0
+        if score>0.03:
+            positive_list.append(aword)
+        elif score<-0.03:
+            negative_list.append(aword)
+
+    return positive_list,negative_list
+
+
+
+
+
+
+def get_BOW(text):
+    BOW = {}
+    for word in text:
+        BOW[word.lower()] = BOW.get(word.lower(),0) + 1
+    return BOW
+
+def third_lexicon(positive_seeds,negative_seeds):
+    positive_list=[]
+    negative_list=[]
+
+    all_dic={}
+    seed_total_dic={}
+    for fileid in brown.fileids():
+        bow=get_BOW(brown.words(fileid))
+        for aword in bow:
+            all_dic[aword]=all_dic.get(aword,{})
+            all_dic[aword]['word_count']=all_dic[aword].get('word_count',0)+1
+            for pseed in positive_seeds:
+                if pseed in bow:
+                    all_dic[aword][pseed]=all_dic[aword].get(pseed,0)+1
+            for nseed in negative_seeds:
+                if nseed in bow:
+                    all_dic[aword][nseed]=all_dic[aword].get(nseed,0)+1
+
+        for pseed in positive_seeds:
+            if pseed in bow:
+                seed_total_dic[pseed]=seed_total_dic.get(pseed,0)+1
+        for nseed in negative_seeds:
+            if nseed in bow:
+                seed_total_dic[nseed]=seed_total_dic.get(nseed,0)+1
+
+    total_count=float(len(brown.fileids()))
+
+    for aword in all_dic:
+        score=0
+        for pseed in positive_seeds:
+            if all_dic[aword].get(pseed) != None:
+                a_score=math.log((all_dic[aword][pseed]/total_count)/((all_dic[aword]['word_count']/total_count)*(seed_total_dic[pseed]/total_count)), 2)
+                if a_score>0:
+                    score+=a_score
+
+        for nseed in negative_seeds:
+            if all_dic[aword].get(nseed) != None:
+                a_score=math.log((all_dic[aword][nseed]/total_count)/((all_dic[aword]['word_count']/total_count)*(seed_total_dic[nseed]/total_count)), 2)
+                if a_score>0:
+                    score-=a_score
+
+
+        score=score/16.0
+
+
+        if score>0.3:
+            positive_list.append(aword)
+        elif score<-0.3:
+            negative_list.append(aword)
+
+    return positive_list,negative_list
+
+def calculate_percentage(manual,automatic):
+    automatic=set(automatic)
+    count=0
+    for word in manual:
+        if word in automatic:
+            count+=1
+
+    return float(count)/len(manual)
+
+def my_polarity(tweet,pset,nset,):
+    score=0
+    for word in tweet:
+        if word in pset:
+            score+=1
+        elif word in nset:
+            score-=1
+    if score>0:
+        return 1
+    elif score<0:
+        return -1
+    else:
+        return 0
+
+def accuracy_of_lexicon(tweets,labels,plist,nlist):
+    count=0
+    pset=set(plist)
+    nset=set(nlist)
+
+    for tweet,label in zip(tweets,labels):
+        if label==my_polarity(tweet,pset,nset):
+            count+=1
+
+    return float(count)/len(labels)
+
 
 
 
 trn_tweets,trn_labels=preprocess_file('train.json')
 
+
 trn_feature_dicts=convert_to_feature_dicts(trn_tweets,True,1)
 
+
 dev_tweets,dev_labels=preprocess_file('dev.json')
+
+
 dev_feature_dicts=convert_to_feature_dicts(dev_tweets,True,0)
-#print 'shit' in set(nltk.corpus.words.words())
+
 trn_feature_dicts,dev_feature_dicts=prepare_data(trn_feature_dicts,dev_feature_dicts)
 
 clf=DecisionTreeClassifier()
 
-test(clf,trn_feature_dicts,trn_labels,dev_feature_dicts,dev_labels)
+print test(clf,trn_feature_dicts,trn_labels,dev_feature_dicts,dev_labels)
 #do_multiple_10foldcrossvalidation(clf,trn_feature_dicts,trn_labels)
 
 clf2=LogisticRegression()
 
-test(clf2,trn_feature_dicts,trn_labels,dev_feature_dicts,dev_labels)
+print test(clf2,trn_feature_dicts,trn_labels,dev_feature_dicts,dev_labels)
 
 clf3 = LogisticRegression(solver='lbfgs', multi_class='multinomial')
 
@@ -182,19 +329,69 @@ clf3.fit(trn_feature_dicts,trn_labels)
 
 
 
-print clf3.predict(dev_feature_dicts)[0:10]
-
-print trn_feature_dicts.shape,len(trn_labels)
-print type(trn_feature_dicts)
-
-for coef in clf3.coef_:
-    print coef,len(coef)
-
-print clf3.intercept_
-
-print clf3.classes_
 
 
 myLR=MyLogisticRegression(clf3.coef_, clf3.intercept_, clf3.classes_)
 
 print myLR.predict(dev_feature_dicts)[0:10]
+
+
+
+
+'''
+positive_list1=[]
+negative_list1=[]
+
+count = 0
+for synset in wn.all_synsets():
+    count += 1
+    if count % 1000 == 0:
+        print count
+    # count synset polarity for each lemma
+    name=synset.name()
+
+
+    polarity_type=get_polarity_type(name)
+    if polarity_type is not None:
+        if polarity_type ==1:
+            positive_list1+=synset.lemma_names()
+        elif polarity_type== -1:
+            negative_list1+=synset.lemma_names()
+
+print 'positive list negative list 1'
+print positive_list1[0:10],negative_list1[0:10]
+
+
+positive_seeds = ["good","nice","excellent","positive","fortunate","correct","superior","great"]
+negative_seeds = ["bad","nasty","poor","negative","unfortunate","wrong","inferior","awful"]
+positive_list2, negative_list2=second_lexicon(positive_seeds, negative_seeds)
+print 'positive list negative list 2'
+print positive_list2[0:10], negative_list2[0:10]
+
+
+positive_list3, negative_list3=third_lexicon(positive_seeds, negative_seeds)
+print 'positive list negative list 3'
+print positive_list3[0:10], negative_list3[0:10]
+
+
+positive_words = opinion_lexicon.positive()
+negative_words = opinion_lexicon.negative()
+
+
+percentage1p= calculate_percentage(positive_words,positive_list1)
+percentage1n=calculate_percentage(negative_words,negative_list1)
+
+percentage2p=calculate_percentage(positive_words, positive_list2)
+percentage2n=calculate_percentage(negative_words, negative_list2)
+
+percentage3p=calculate_percentage(positive_words, positive_list3)
+percentage3n=calculate_percentage(negative_words, negative_list3)
+
+
+print(percentage1p,percentage1n,percentage2p,percentage2n,percentage3p,percentage3n)
+print 'accuracy of lexicon'
+print accuracy_of_lexicon(dev_tweets,dev_labels,positive_words,negative_words)
+print accuracy_of_lexicon(dev_tweets,dev_labels,positive_list1,negative_list1)
+print accuracy_of_lexicon(dev_tweets,dev_labels,positive_list2,negative_list2)
+print accuracy_of_lexicon(dev_tweets,dev_labels,positive_list3,negative_list3)
+'''
