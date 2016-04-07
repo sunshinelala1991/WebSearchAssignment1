@@ -1,0 +1,92 @@
+    <!DOCTYPE html>
+
+<html>
+  <head>
+    <title>Bird Song Classification</title>
+    <style type="text/css">
+      .label {text-align: right}
+      .error {color: red}
+    </style>
+    <script src="http://maps.googleapis.com/maps/api/js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+  </head>
+
+  <body>
+      <h2>Upload new File</h2>
+      <form action="" method=post enctype=multipart/form-data>
+      <p><input type=file name=file>
+         <input type=submit value=Upload>
+    </form>
+    <h2>Location</h2>
+    <form name="f1" method="post">
+      <table>
+        <tr>
+          <td class="label">
+            Latitude
+          </td>
+          <td>
+            <input id="lat" type="text"  >
+          </td>
+          <td class="error">
+          </td>
+        </tr>
+
+        <tr>
+          <td class="label">
+            Longitude
+          </td>
+          <td>
+            <input id="lng" type="text" >
+          </td>
+          <td class="error">
+
+
+          </td>
+        </tr>
+
+      </table>
+
+      <button type="button" id="btn">okay</button>
+    </form>
+
+
+      {% if name %}
+  <h1>This is a {{ name }}!</h1>
+{% else %}
+  <h1>Guess the bird</h1>
+{% endif %}
+
+  <div id="googleMap" style="width:500px;height:380px;"></div>
+  <script>
+
+  var lat = $('#lat');
+  var lng = $('#lng');
+  var btn = $('#btn');
+  btn.click(function(){
+		var latValue = lat.val();
+		var lngValue = lng.val();
+		initialize(latValue,lngValue);
+  });
+
+
+function initialize(latValue,lngValue) {
+  var mapProp = {
+    center:new google.maps.LatLng(latValue,lngValue),
+    zoom:5,
+    mapTypeId:google.maps.MapTypeId.ROADMAP
+  };
+  var map=new google.maps.Map(document.getElementById("googleMap"), mapProp);
+   // Create a marker and set its position.
+  var marker = new google.maps.Marker({
+    map: map,
+    position: new google.maps.LatLng(latValue,lngValue),
+    title: 'Hello World!'
+  });
+
+}
+google.maps.event.addDomListener(window, 'load', initialize);
+</script>
+  </body>
+
+
+</html>
